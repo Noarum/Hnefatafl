@@ -5,7 +5,7 @@ initial_board_9([
     [e, e, e, e, b, e, e, e, e],
     [e, e, e, e, w, e, e, e, e],
     [b, e, e, e, w, e, e, e, b],
-    [b, b, w, w, t, w, w, b, b],
+    [b, b, w, w, k, w, w, b, b],  % <-- Changed 't' to 'k'
     [b, e, e, e, w, e, e, e, b],
     [e, e, e, e, w, e, e, e, e],
     [e, e, e, e, b, e, e, e, e],
@@ -18,7 +18,7 @@ initial_board_11([
     [e, e, e, e, e, w, e, e, e, e, e],
     [b, e, e, e, e, w, e, e, e, e, b],
     [b, e, e, e, e, w, e, e, e, e, b],
-    [b, b, e, e, e, t, e, e, e, b, b],
+    [b, b, e, e, e, k, e, e, e, b, b],  % <-- Changed 't' to 'k'
     [b, e, e, e, e, w, e, e, e, e, b],
     [b, e, e, e, e, w, e, e, e, e, b],
     [e, e, e, e, e, w, e, e, e, e, e],

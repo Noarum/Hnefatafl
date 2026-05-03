@@ -5,6 +5,9 @@
 piece_belongs_to(b, b).
 piece_belongs_to(w, w).
 piece_belongs_to(w, k).
+piece_belongs_to(attacker, b).
+piece_belongs_to(defender, w).
+piece_belongs_to(defender, k).
 
 
 
@@ -95,6 +98,10 @@ valid_move(Board, X1, Y1, X2, Y2, Player) :-
 % MOVE GENERATION
 % =========================
 
+destination_cell(Board, NX, NY) :-
+    nth0(NY, Board, Row),
+    nth0(NX, Row, _).
+
 player_pieces(Board, Player, Positions) :-
     findall((X,Y),
         (
@@ -106,7 +113,10 @@ player_pieces(Board, Player, Positions) :-
 
 moves_from_piece(Board, X, Y, Player, Moves) :-
     findall(move(X,Y,NX,NY),
-        valid_move(Board, X, Y, NX, NY, Player),
+        (
+            destination_cell(Board, NX, NY),
+            valid_move(Board, X, Y, NX, NY, Player)
+        ),
         Moves).
 
 all_valid_moves(Board, Player, Moves) :-
@@ -115,6 +125,13 @@ all_valid_moves(Board, Player, Moves) :-
     findall(move(X,Y,NX,NY),
         (
             member((X,Y), Positions),
+            destination_cell(Board, NX, NY),
             valid_move(Board, X, Y, NX, NY, Player)
         ),
         Moves).
+
+get_valid_moves(Board, X, Y, Player, Moves) :-
+    moves_from_piece(Board, X, Y, Player, Moves).
+
+get_all_moves(Board, Player, Moves) :-
+    all_valid_moves(Board, Player, Moves).
