@@ -12,6 +12,23 @@ initial_board_9([
     [c, e, e, b, b, b, e, e, c]
 ]).
 
+initial_board_11([
+    [c, e, e, b, b, b, b, b, e, e, c],
+    [e, e, e, e, e, b, e, e, e, e, e],
+    [e, e, e, e, e, w, e, e, e, e, e],
+    [b, e, e, e, e, w, e, e, e, e, b],
+    [b, e, e, e, e, w, e, e, e, e, b],
+    [b, b, e, e, e, t, e, e, e, b, b],
+    [b, e, e, e, e, w, e, e, e, e, b],
+    [b, e, e, e, e, w, e, e, e, e, b],
+    [e, e, e, e, e, w, e, e, e, e, e],
+    [e, e, e, e, e, b, e, e, e, e, e],
+    [c, e, e, b, b, b, b, b, e, e, c]
+]).
+
+initial_board(9, Board) :- initial_board_9(Board).
+initial_board(11, Board) :- initial_board_11(Board).
+
 % Get Piece
 get_piece(Board, X, Y, Piece) :-
     nth0(Y, Board, Row),
