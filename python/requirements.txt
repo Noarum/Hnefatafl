@@ -1,2 +1,2 @@
-pyswip>=0.2.10
-pygame>=2.5.0
+pygame-ce==2.5.7
+pyswip==0.3.3
