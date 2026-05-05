@@ -38,7 +38,6 @@ class HnefataflBridge:
         self._prolog_dir = Path(__file__).resolve().parent.parent / "prolog"
         self._controller_path = self._prolog_dir / "controller.pl"
         self._consult_controller()
-        self._init_game()
 
     def _consult_controller(self) -> None:
         if not self._controller_path.is_file():
@@ -47,12 +46,14 @@ class HnefataflBridge:
             )
         self._prolog.consult(str(self._controller_path.resolve()))
 
-    def _init_game(self) -> None:
+    def init_game(self, size: int = 11) -> None:
+        """Initialize game with board size."""
         try:
-            list(self._prolog.query("init_game"))
+            q = f"init_game({int(size)})"
+            list(self._prolog.query(q))
         except Exception as e:
             raise RuntimeError(
-                "Failed to run init_game/0. Is controller.pl loadable?"
+                f"Failed to run {q}. Is controller.pl loadable?"
             ) from e
 
     # ------------------------------------------------------------------

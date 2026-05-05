@@ -46,17 +46,18 @@ def main() -> None:
 
     # Initialise pygame early so the start screen can display.
     pygame.init()
-    from gui import WIN_W, WIN_H  # noqa: E402
-    screen = pygame.display.set_mode((WIN_W, WIN_H))
+    # Use a fixed size for the start screen; the GUI will resize for the board.
+    screen = pygame.display.set_mode((700, 800))
     pygame.display.set_caption("Hnefatafl — Viking Chess")
 
-    # Determine side and difficulty (start screen or CLI flags).
+    # Determine side, difficulty, and size (start screen or CLI flags).
     if args.difficulty is not None and args.side is not None:
         human_side = args.side
         difficulty = args.difficulty
+        board_size = 11  # default if skipped by flags
     else:
         # Show the start screen for any missing option.
-        human_side, difficulty = run_start_screen(screen)
+        human_side, difficulty, board_size = run_start_screen(screen)
         if args.difficulty:
             difficulty = args.difficulty
         if args.side:
@@ -68,16 +69,15 @@ def main() -> None:
     else:
         try:
             bridge = HnefataflBridge()
+            bridge.init_game(board_size)
         except FileNotFoundError as e:
             print(f"[ERROR] {e}", file=sys.stderr)
-            print("Tip: Run from the project root, or use --mock to test without Prolog.",
-                  file=sys.stderr)
             sys.exit(1)
         except RuntimeError as e:
             print(f"[ERROR] Prolog initialisation failed: {e}", file=sys.stderr)
             sys.exit(1)
 
-    gui = HnefataflGUI(bridge, difficulty=difficulty, human_side=human_side)
+    gui = HnefataflGUI(bridge, difficulty=difficulty, human_side=human_side, board_size=board_size)
     gui.run()
 
 

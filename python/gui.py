@@ -6,7 +6,7 @@ Fixes vs. original:
   2. Valid destination squares are highlighted when a piece is selected
   3. Clicking an enemy piece while something is selected resets selection
      (does not attempt an illegal move)
-  4. Start screen: player chooses Human side (attacker / defender) and difficulty
+  4. Start screen: player chooses Human side (attacker / defender), board size (9x9 / 11x11), and difficulty
   5. Game-over overlay blocks further clicks correctly
   6. Throne and corner squares visually marked
   7. Status bar shows whose turn it is with color coding
@@ -23,8 +23,7 @@ import pygame
 
 from bridge import HnefataflBridge, MockHnefataflBridge
 
-# ── Layout constants ─────────────────────────────────────────────────────────
-BOARD_SIZE    = 11
+# ── Layout defaults (actual window size is dynamic) ─────────────────────────
 CELL_SIZE     = 60
 MARGIN        = 40
 UI_BAR_HEIGHT = 60
@@ -58,21 +57,13 @@ C = {
 
 BridgeType = Union[HnefataflBridge, MockHnefataflBridge]
 
-# ── Window size ───────────────────────────────────────────────────────────────
-GRID_PX  = BOARD_SIZE * CELL_SIZE + 2 * MARGIN
-WIN_W    = GRID_PX
-WIN_H    = UI_BAR_HEIGHT + GRID_PX
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Start screen
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_start_screen(screen: pygame.Surface) -> tuple[str, str]:
+def run_start_screen(screen: pygame.Surface) -> tuple[str, str, int]:
     """
-    Show a start screen and return (human_side, difficulty).
-    human_side   = 'attacker' | 'defender'
-    difficulty   = 'easy' | 'medium' | 'hard'
+    Show a start screen and return (human_side, difficulty, board_size).
     """
     font_title  = pygame.font.SysFont("dejavusans,sans", 38, bold=True)
     font_sub    = pygame.font.SysFont("dejavusans,sans", 22)
@@ -81,6 +72,7 @@ def run_start_screen(screen: pygame.Surface) -> tuple[str, str]:
 
     human_side  = "defender"
     difficulty  = "medium"
+    board_size  = 11
 
     def draw_btn(label: str, rect: pygame.Rect, active: bool, hover: bool) -> None:
         color = C["btn_active"] if active else (C["btn_hover"] if hover else C["btn"])
@@ -90,16 +82,21 @@ def run_start_screen(screen: pygame.Surface) -> tuple[str, str]:
         screen.blit(ts, (rect.centerx - ts.get_width() // 2,
                          rect.centery - ts.get_height() // 2))
 
+    win_w = screen.get_width()
     side_rects = {
-        "attacker": pygame.Rect(WIN_W // 2 - 160, 180, 140, 44),
-        "defender": pygame.Rect(WIN_W // 2 +  20, 180, 140, 44),
+        "attacker": pygame.Rect(win_w // 2 - 160, 180, 140, 44),
+        "defender": pygame.Rect(win_w // 2 +  20, 180, 140, 44),
+    }
+    size_rects = {
+        9:  pygame.Rect(win_w // 2 - 160, 260, 140, 44),
+        11: pygame.Rect(win_w // 2 +  20, 260, 140, 44),
     }
     diff_rects = {
-        "easy":   pygame.Rect(WIN_W // 2 - 185, 290, 110, 44),
-        "medium": pygame.Rect(WIN_W // 2 -  55, 290, 110, 44),
-        "hard":   pygame.Rect(WIN_W // 2 +  75, 290, 110, 44),
+        "easy":   pygame.Rect(win_w // 2 - 185, 340, 110, 44),
+        "medium": pygame.Rect(win_w // 2 -  55, 340, 110, 44),
+        "hard":   pygame.Rect(win_w // 2 +  75, 340, 110, 44),
     }
-    start_rect = pygame.Rect(WIN_W // 2 - 90, 380, 180, 52)
+    start_rect = pygame.Rect(win_w // 2 - 90, 430, 180, 52)
 
     while True:
         mx, my = pygame.mouse.get_pos()
@@ -110,37 +107,39 @@ def run_start_screen(screen: pygame.Surface) -> tuple[str, str]:
                 sys.exit()
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 for side, r in side_rects.items():
-                    if r.collidepoint(mx, my):
-                        human_side = side
+                    if r.collidepoint(mx, my): human_side = side
+                for sz, r in size_rects.items():
+                    if r.collidepoint(mx, my): board_size = sz
                 for diff, r in diff_rects.items():
-                    if r.collidepoint(mx, my):
-                        difficulty = diff
+                    if r.collidepoint(mx, my): difficulty = diff
                 if start_rect.collidepoint(mx, my):
-                    return human_side, difficulty
+                    return human_side, difficulty, board_size
 
         screen.fill(C["bg"])
 
         # Title
         ts = font_title.render("Hnefatafl", True, C["king"])
-        screen.blit(ts, (WIN_W // 2 - ts.get_width() // 2, 80))
+        screen.blit(ts, (win_w // 2 - ts.get_width() // 2, 60))
         sub = font_sub.render("Viking Chess", True, C["text_dim"])
-        screen.blit(sub, (WIN_W // 2 - sub.get_width() // 2, 126))
+        screen.blit(sub, (win_w // 2 - sub.get_width() // 2, 106))
 
-        # Side label
-        lbl = font_sub.render("You play as:", True, C["text"])
-        screen.blit(lbl, (WIN_W // 2 - lbl.get_width() // 2, 150))
+        # Side selection
+        lbl = font_sub.render("Choose Side:", True, C["text"])
+        screen.blit(lbl, (win_w // 2 - lbl.get_width() // 2, 146))
         for side, r in side_rects.items():
-            draw_btn(side.capitalize(), r,
-                     active=human_side == side,
-                     hover=r.collidepoint(mx, my))
+            draw_btn(side.capitalize(), r, human_side == side, r.collidepoint(mx, my))
 
-        # Difficulty label
-        lbl2 = font_sub.render("Difficulty:", True, C["text"])
-        screen.blit(lbl2, (WIN_W // 2 - lbl2.get_width() // 2, 258))
+        # Board size selection
+        lbl = font_sub.render("Board Size:", True, C["text"])
+        screen.blit(lbl, (win_w // 2 - lbl.get_width() // 2, 230))
+        for sz, r in size_rects.items():
+            draw_btn(f"{sz}x{sz}", r, board_size == sz, r.collidepoint(mx, my))
+
+        # Difficulty selection
+        lbl = font_sub.render("AI Difficulty:", True, C["text"])
+        screen.blit(lbl, (win_w // 2 - lbl.get_width() // 2, 310))
         for diff, r in diff_rects.items():
-            draw_btn(diff.capitalize(), r,
-                     active=difficulty == diff,
-                     hover=r.collidepoint(mx, my))
+            draw_btn(diff.capitalize(), r, difficulty == diff, r.collidepoint(mx, my))
 
         # Start button
         pygame.draw.rect(screen, C["btn_active"], start_rect, border_radius=10)
@@ -164,25 +163,31 @@ class HnefataflGUI:
         bridge:      BridgeType,
         difficulty:  str = "medium",
         human_side:  str = "defender",
+        board_size:  int = 11
     ) -> None:
         self._bridge     = bridge
         self._difficulty = difficulty.strip().lower()
-        self._human_side = human_side.strip().lower()  # 'attacker' or 'defender'
+        self._human_side = human_side.strip().lower()
+        self._size       = board_size
 
         self._selected:     Optional[tuple[int, int]]       = None
         self._valid_dsts:   list[tuple[int, int]]            = []
         self._error_msg:    Optional[str]                    = None
         self._error_until:  int                              = 0
-        self._ai_thinking:  bool                             = False  # prevents double-trigger
+        self._ai_thinking:  bool                             = False
         self._font:         Optional[pygame.font.Font]       = None
         self._font_big:     Optional[pygame.font.Font]       = None
 
         pygame.init()
-        self._screen = pygame.display.set_mode((WIN_W, WIN_H))
-        pygame.display.set_caption("Hnefatafl — Viking Chess")
+        # Calculate dynamic window size
+        grid_px = self._size * CELL_SIZE + 2 * MARGIN
+        self._win_w = grid_px
+        self._win_h = UI_BAR_HEIGHT + grid_px
+        self._screen = pygame.display.set_mode((self._win_w, self._win_h))
+        pygame.display.set_caption(f"Hnefatafl ({self._size}x{self._size})")
         self._clock  = pygame.time.Clock()
-        self._font     = pygame.font.SysFont("dejavusans,sans", 20)
-        self._font_big = pygame.font.SysFont("dejavusans,sans", 38, bold=True)
+        self._font     = pygame.font.SysFont("dejavusans,sans", 18)
+        self._font_big = pygame.font.SysFont("dejavusans,sans", 32, bold=True)
 
     # ── Coordinate helpers ────────────────────────────────────────────────────
 
@@ -198,7 +203,7 @@ class HnefataflGUI:
         if x < 0 or y < 0:
             return None
         col, row = x // CELL_SIZE, y // CELL_SIZE
-        if not (0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE):
+        if not (0 <= row < self._size and 0 <= col < self._size):
             return None
         return row, col
 
@@ -226,12 +231,12 @@ class HnefataflGUI:
     def _draw_board(self) -> None:
         assert self._screen
 
-        center  = BOARD_SIZE // 2
-        corners = {(0,0),(0,BOARD_SIZE-1),(BOARD_SIZE-1,0),(BOARD_SIZE-1,BOARD_SIZE-1)}
+        center  = self._size // 2
+        corners = {(0,0),(0,self._size-1),(self._size-1,0),(self._size-1,self._size-1)}
         dst_set = set(self._valid_dsts)
 
-        for r in range(BOARD_SIZE):
-            for c in range(BOARD_SIZE):
+        for r in range(self._size):
+            for c in range(self._size):
                 x, y = self._cell_to_pixel(r, c)
                 rect  = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
 
@@ -272,7 +277,7 @@ class HnefataflGUI:
             pieces = []
 
         for r, c, piece in pieces:
-            if not (0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE):
+            if not (0 <= r < self._size and 0 <= c < self._size):
                 continue
             cx, cy = self._cell_to_pixel(r, c)
             center_xy = (cx + CELL_SIZE // 2, cy + CELL_SIZE // 2)
@@ -297,7 +302,7 @@ class HnefataflGUI:
 
         self._tick_error()
         pygame.draw.rect(self._screen, C["ui_bar"],
-                         pygame.Rect(0, 0, WIN_W, UI_BAR_HEIGHT))
+                         pygame.Rect(0, 0, self._win_w, UI_BAR_HEIGHT))
 
         try:
             player = self._bridge.current_player()
@@ -309,36 +314,36 @@ class HnefataflGUI:
         # Color-code whose turn it is
         p_color = C["attacker_col"] if player == "attacker" else C["defender_col"]
 
-        thinking_tag = "  [AI thinking…]" if self._ai_thinking else ""
+        thinking_tag = "  [Thinking…]" if self._ai_thinking else ""
         line = (f"Turn: "
                 f"{player.capitalize()}{thinking_tag}"
-                f"   |   Difficulty: {self._difficulty.capitalize()}"
-                f"   |   You: {self._human_side.capitalize()}")
+                f"   |   Diff: {self._difficulty.capitalize()}"
+                f"   |   Size: {self._size}x{self._size}")
         ts = self._font.render(line, True, p_color)
         self._screen.blit(ts, (12, 10))
 
         if self._error_msg:
-            es = self._font.render(self._error_msg[:110], True, C["error"])
+            es = self._font.render(self._error_msg[:100], True, C["error"])
             self._screen.blit(es, (12, 34))
 
         # Game-over overlay
         if status != "ongoing":
-            overlay = pygame.Surface((WIN_W, WIN_H), pygame.SRCALPHA)
+            overlay = pygame.Surface((self._win_w, self._win_h), pygame.SRCALPHA)
             overlay.fill(C["overlay"])
             self._screen.blit(overlay, (0, 0))
             assert self._font_big
             winner_text = {
                 "attacker_won": "Attackers Win!",
-                "defender_won": "Defenders Win!  King Escaped!",
+                "defender_won": "King Escaped!",
             }.get(status, f"Game over: {status.replace('_',' ')}")
             ts2 = self._font_big.render(winner_text, True, C["king"])
             self._screen.blit(ts2,
-                              (WIN_W // 2 - ts2.get_width() // 2,
-                               WIN_H // 2 - ts2.get_height() // 2))
+                              (self._win_w // 2 - ts2.get_width() // 2,
+                               self._win_h // 2 - ts2.get_height() // 2))
             hint = self._font.render("Close window to exit.", True, C["text_dim"])
             self._screen.blit(hint,
-                              (WIN_W // 2 - hint.get_width() // 2,
-                               WIN_H // 2 + ts2.get_height()))
+                              (self._win_w // 2 - hint.get_width() // 2,
+                               self._win_h // 2 + ts2.get_height()))
 
     # ── Click handling ────────────────────────────────────────────────────────
 
