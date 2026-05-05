@@ -40,7 +40,7 @@ move_heuristic(Board, w, move(X1,Y1,X2,Y2), Score) :-
     ; Score = 0  % Non-king moves get neutral score
     ).
 
-move_heuristic(Board, b, move(X1,Y1,X2,Y2), Score) :-
+move_heuristic(Board, b, move(_,_,X2,Y2), Score) :-
     % For attacker: prefer moves toward the center (where king usually is)
     % Simple heuristic: distance to center
     board_size(Board, S),
@@ -51,11 +51,11 @@ move_heuristic(Board, b, move(X1,Y1,X2,Y2), Score) :-
 % Terminal state: Win/Loss
 alpha_beta(Board, _, _, _, _, none, Score) :-
     ( check_win(Board, w) ; check_win(Board, b) ),
-    utility(Board, defender, Score), !.
+    utility(Board, w, Score), !.
 
 % Leaf node: Max depth reached
 alpha_beta(Board, 0, _, _, _, none, Score) :-
-    utility(Board, defender, Score), !.
+    utility(Board, w, Score), !.
 
 % Internal node
 alpha_beta(Board, Depth, Alpha, Beta, Player, BestMove, BestScore) :-
@@ -63,11 +63,11 @@ alpha_beta(Board, Depth, Alpha, Beta, Player, BestMove, BestScore) :-
     order_moves(Board, Player, Moves, OrderedMoves),
     ( OrderedMoves == [] ->
         % No moves available: loss for the player whose turn it is
-        ( Player == defender -> BestScore = -1000000 ; BestScore = 1000000 ),
+        ( (Player == defender ; Player == w) -> BestScore = -1000000 ; BestScore = 1000000 ),
         BestMove = none
     ;
         NewDepth is Depth - 1,
-        ( Player == defender ->
+        ( (Player == defender ; Player == w) ->
             % Maximizing
             evaluate_max(OrderedMoves, Board, NewDepth, Alpha, Beta, none, -1000002, BestMove, BestScore)
         ;
@@ -82,8 +82,8 @@ alpha_beta(Board, Depth, Alpha, Beta, Player, BestMove, BestScore) :-
 
 evaluate_max([], _, _, _, _, BestMove, BestScore, BestMove, BestScore).
 evaluate_max([move(X1,Y1,X2,Y2)|Rest], Board, Depth, Alpha, Beta, CurBestMove, CurBestScore, BestMove, BestScore) :-
-    apply_move(Board, X1, Y1, X2, Y2, defender, NewBoard),
-    alpha_beta(NewBoard, Depth, Alpha, Beta, attacker, _, Score),
+    apply_move(Board, X1, Y1, X2, Y2, w, NewBoard),
+    alpha_beta(NewBoard, Depth, Alpha, Beta, b, _, Score),
     
     ( Score > CurBestScore ->
         NextBestScore = Score,
@@ -108,8 +108,8 @@ evaluate_max([move(X1,Y1,X2,Y2)|Rest], Board, Depth, Alpha, Beta, CurBestMove, C
 
 evaluate_min([], _, _, _, _, BestMove, BestScore, BestMove, BestScore).
 evaluate_min([move(X1,Y1,X2,Y2)|Rest], Board, Depth, Alpha, Beta, CurBestMove, CurBestScore, BestMove, BestScore) :-
-    apply_move(Board, X1, Y1, X2, Y2, attacker, NewBoard),
-    alpha_beta(NewBoard, Depth, Alpha, Beta, defender, _, Score),
+    apply_move(Board, X1, Y1, X2, Y2, b, NewBoard),
+    alpha_beta(NewBoard, Depth, Alpha, Beta, w, _, Score),
     
     ( Score < CurBestScore ->
         NextBestScore = Score,
