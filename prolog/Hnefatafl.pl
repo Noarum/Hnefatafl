@@ -5,7 +5,7 @@ initial_board_9([
     [e, e, e, e, b, e, e, e, e],
     [e, e, e, e, w, e, e, e, e],
     [b, e, e, e, w, e, e, e, b],
-    [b, b, w, w, k, w, w, b, b],  % <-- Changed 't' to 'k'
+    [b, b, w, w, k, w, w, b, b],
     [b, e, e, e, w, e, e, e, b],
     [e, e, e, e, w, e, e, e, e],
     [e, e, e, e, b, e, e, e, e],
@@ -15,13 +15,13 @@ initial_board_9([
 initial_board_11([
     [c, e, e, b, b, b, b, b, e, e, c],
     [e, e, e, e, e, b, e, e, e, e, e],
-    [e, e, e, e, e, w, e, e, e, e, e],
+    [e, e, e, e, e, e, e, e, e, e, e],
     [b, e, e, e, e, w, e, e, e, e, b],
+    [b, e, e, e, w, w, w, e, e, e, b],
+    [b, b, e, w, w, k, w, w, e, b, b],
+    [b, e, e, e, w, w, w, e, e, e, b],
     [b, e, e, e, e, w, e, e, e, e, b],
-    [b, b, e, e, e, k, e, e, e, b, b],  % <-- Changed 't' to 'k'
-    [b, e, e, e, e, w, e, e, e, e, b],
-    [b, e, e, e, e, w, e, e, e, e, b],
-    [e, e, e, e, e, w, e, e, e, e, e],
+    [e, e, e, e, e, e, e, e, e, e, e],
     [e, e, e, e, e, b, e, e, e, e, e],
     [c, e, e, b, b, b, b, b, e, e, c]
 ]).
@@ -36,22 +36,20 @@ get_piece(Board, X, Y, Piece) :-
 
 % Set Piece
 set_piece(Board, X, Y, Piece, NewBoard) :-
-    nth0(Y, Board, OldRow, RestRows),
-    nth0(X, OldRow, _, RestCells),
-    nth0(X, NewRow, Piece, RestCells),
-    nth0(Y, NewBoard, NewRow, RestRows).
+    nth0(Y, Board, OldRow),
+    replace_nth(X, Piece, OldRow, NewRow),
+    replace_nth(Y, NewRow, Board, NewBoard).
 
-% Bounds
+replace_nth(0, Val, [_|T], [Val|T]).
+replace_nth(Index, Val, [H|T], [H|NewT]) :-
+    Index > 0,
+    NextIndex is Index - 1,
+    replace_nth(NextIndex, Val, T, NewT).
+
 within_bounds(Board, X, Y) :-
-    length(Board, Size),
-    X >= 0, X < Size,
-    Y >= 0, Y < Size.
-
-
-
-% =========================
-% CAPTURE LOGIC
-% =========================
+    length(Board, S),
+    X >= 0, X < S,
+    Y >= 0, Y < S.
 
 find_king(Board, X, Y) :-
     nth0(Y, Board, Row),
@@ -65,14 +63,10 @@ king_surrounded(Board, KX, KY) :-
             member((DX,DY), [(1,0),(-1,0),(0,1),(0,-1)]),
             AX is KX + DX,
             AY is KY + DY,
-            within_bounds(Board, AX, AY),
-            get_piece(Board, AX, AY, P),
             (
-                P == b ;
-                (AX=:=0, AY=:=0) ;
-                (AX=:=Max, AY=:=0) ;
-                (AX=:=0, AY=:=Max) ;
-                (AX=:=Max, AY=:=Max)
+                \+ within_bounds(Board, AX, AY) -> true ; % Wall
+                get_piece(Board, AX, AY, P),
+                ( P == b ; P == t ; (AX=:=0, AY=:=0) ; (AX=:=Max, AY=:=0) ; (AX=:=0, AY=:=Max) ; (AX=:=Max, AY=:=Max) )
             )
         ),
         Blockers),
@@ -86,26 +80,15 @@ check_one_direction(Board, X, Y, DX, DY, Player, NewBoard) :-
     Y2 is Y + 2*DY,
     within_bounds(Board, X1, Y1),
     get_piece(Board, X1, Y1, Mid),
-
-    Mid \== e,
-    Mid \== t,
-    Mid \== c,
-    Mid \== k,
+    Mid \== e, Mid \== t, Mid \== c, Mid \== k,
     \+ piece_belongs_to(Player, Mid),
-
     (
         within_bounds(Board, X2, Y2),
         get_piece(Board, X2, Y2, End),
-        (
-            piece_belongs_to(Player, End) ;
-            is_restricted(X2, Y2, Board)
-        )
-    ->
-        set_piece(Board, X1, Y1, e, NewBoard)
-    ;
-        NewBoard = Board
+        (piece_belongs_to(Player, End) ; is_restricted(X2, Y2, Board))
+    ->  set_piece(Board, X1, Y1, e, NewBoard), !
+    ;   NewBoard = Board, !
     ).
-
 check_one_direction(Board, _, _, _, _, _, Board).
 
 apply_captures(Board, X, Y, Player, FinalBoard) :-
@@ -113,72 +96,16 @@ apply_captures(Board, X, Y, Player, FinalBoard) :-
     check_one_direction(B1, X, Y, -1, 0, Player, B2),
     check_one_direction(B2, X, Y, 0, 1, Player, B3),
     check_one_direction(B3, X, Y, 0, -1, Player, B4),
-
     (
-        Player == b,
+        (Player == b ; Player == attacker),
         find_king(B4, KX, KY),
         king_surrounded(B4, KX, KY)
-    ->
-        set_piece(B4, KX, KY, e, FinalBoard)
-    ;
-        FinalBoard = B4
+    ->  set_piece(B4, KX, KY, e, FinalBoard)
+    ;   FinalBoard = B4
     ).
 
-
-
-% =========================
-% APPLY MOVE
-% =========================
-
-apply_move(Board, X1, Y1, X2, Y2, Player, FinalBoard) :-
-    valid_move(Board, X1, Y1, X2, Y2, Player),
-
-    get_piece(Board, X1, Y1, Piece),
-
-    length(Board, S),
-    Max is S - 1,
-    Center is S // 2,
-
-    (
-        (X1=:=Center, Y1=:=Center) -> OldVal = t ;
-        (X1=:=0, Y1=:=0) -> OldVal = c ;
-        (X1=:=Max, Y1=:=0) -> OldVal = c ;
-        (X1=:=0, Y1=:=Max) -> OldVal = c ;
-        (X1=:=Max, Y1=:=Max) -> OldVal = c ;
-        OldVal = e
-    ),
-
-    set_piece(Board, X1, Y1, OldVal, TempBoard),
-    set_piece(TempBoard, X2, Y2, Piece, TempBoard2),
-
-    apply_captures(TempBoard2, X2, Y2, Player, FinalBoard).
-
-
-
-% =========================
-% WIN CONDITIONS
-% =========================
-
+check_win(Board, b) :- \+ find_king(Board, _, _).
 check_win(Board, w) :-
-    length(Board, S),
-    Max is S - 1,
-    (
-        get_piece(Board, 0, 0, k) ;
-        get_piece(Board, Max, 0, k) ;
-        get_piece(Board, 0, Max, k) ;
-        get_piece(Board, Max, Max, k)
-    ).
-
-check_win(Board, b) :-
-    \+ (member(Row, Board), member(k, Row)).
-
-
-
-% =========================
-% PRINT
-% =========================
-
-print_board([]).
-print_board([H|T]) :-
-    write(H), nl,
-    print_board(T).
+    length(Board, S), Max is S - 1,
+    find_king(Board, KX, KY),
+    ( (KX=:=0, KY=:=0) ; (KX=:=Max, KY=:=0) ; (KX=:=0, KY=:=Max) ; (KX=:=Max, KY=:=Max) ).

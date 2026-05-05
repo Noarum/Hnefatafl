@@ -9,8 +9,6 @@ piece_belongs_to(attacker, b).
 piece_belongs_to(defender, w).
 piece_belongs_to(defender, k).
 
-
-
 % =========================
 % RESTRICTED CELLS
 % =========================
@@ -19,7 +17,6 @@ is_restricted(X, Y, Board) :-
     length(Board, S),
     Max is S - 1,
     Center is S // 2,
-
     (
         (X=:=0, Y=:=0) ;
         (X=:=Max, Y=:=0) ;
@@ -28,8 +25,6 @@ is_restricted(X, Y, Board) :-
         (X=:=Center, Y=:=Center)
     ).
 
-
-
 % =========================
 % PATH CHECK
 % =========================
@@ -37,21 +32,16 @@ is_restricted(X, Y, Board) :-
 path_clear(Board, X1, Y1, X2, Y2) :-
     DX is sign(X2 - X1),
     DY is sign(Y2 - Y1),
-
     NextX is X1 + DX,
     NextY is Y1 + DY,
-
     (
         (NextX =:= X2, NextY =:= Y2)
     ->
         true
     ;
-        get_piece(Board, NextX, NextY, Piece),
-        Piece == e,
+        get_piece(Board, NextX, NextY, e),
         path_clear(Board, NextX, NextY, X2, Y2)
     ).
-
-
 
 % =========================
 % MOVE VALIDATION
@@ -60,75 +50,72 @@ path_clear(Board, X1, Y1, X2, Y2) :-
 valid_move(Board, X1, Y1, X2, Y2, Player) :-
     within_bounds(Board, X1, Y1),
     within_bounds(Board, X2, Y2),
-
     get_piece(Board, X1, Y1, Piece),
     piece_belongs_to(Player, Piece),
-
     get_piece(Board, X2, Y2, Dest),
-
     (
         Dest == e ;
         (Dest == t, Piece == k) ;
         (Dest == c, Piece == k)
     ),
-
     (
         is_restricted(X2, Y2, Board)
-    ->
-        Piece == k
-    ;
-        true
+    ->  Piece == k
+    ;   true
     ),
-
-    (
-        X1 =:= X2 ;
-        Y1 =:= Y2
-    ),
-
-    (
-        X1 \== X2 ;
-        Y1 \== Y2
-    ),
-
+    ( X1 =:= X2 ; Y1 =:= Y2 ),
+    \+ (X1 =:= X2, Y1 =:= Y2),
     path_clear(Board, X1, Y1, X2, Y2).
 
+% =========================
+% RAY-BASED GENERATION
+% =========================
 
+ray(Board, SX, SY, X, Y, DX, DY, Piece, [move(SX,SY,NX,NY)|Rest]) :-
+    NX is X + DX,
+    NY is Y + DY,
+    within_bounds(Board, NX, NY),
+    get_piece(Board, NX, NY, Cell),
+    (
+        Cell == e
+    ->  ray(Board, SX, SY, NX, NY, DX, DY, Piece, Rest)
+    ;
+        (Piece == k, (Cell == t ; Cell == c))
+    ->  Rest = []
+    ;
+        fail
+    ).
+ray(_, _, _, _, _, _, _, _, []).
 
 % =========================
 % MOVE GENERATION
 % =========================
 
-destination_cell(Board, NX, NY) :-
-    nth0(NY, Board, Row),
-    nth0(NX, Row, _).
-
-player_pieces(Board, Player, Positions) :-
-    findall((X,Y),
-        (
-            nth0(Y, Board, Row),
-            nth0(X, Row, Piece),
-            piece_belongs_to(Player, Piece)
-        ),
-        Positions).
-
 moves_from_piece(Board, X, Y, Player, Moves) :-
-    findall(move(X,Y,NX,NY),
+    get_piece(Board, X, Y, Piece),
+    piece_belongs_to(Player, Piece),
+    findall(M,
         (
-            destination_cell(Board, NX, NY),
-            valid_move(Board, X, Y, NX, NY, Player)
+            member((DX,DY), [(1,0),(-1,0),(0,1),(0,-1)]),
+            ray(Board, X, Y, X, Y, DX, DY, Piece, RayMoves),
+            member(M, RayMoves)
         ),
         Moves).
 
 all_valid_moves(Board, Player, Moves) :-
-    player_pieces(Board, Player, Positions),
-
-    findall(move(X,Y,NX,NY),
+    findall(M,
         (
-            member((X,Y), Positions),
-            destination_cell(Board, NX, NY),
-            valid_move(Board, X, Y, NX, NY, Player)
+            nth0(Y, Board, Row),
+            nth0(X, Row, Piece),
+            piece_belongs_to(Player, Piece),
+            moves_from_piece(Board, X, Y, Player, Ms),
+            member(M, Ms)
         ),
         Moves).
+
+% =========================
+% WRAPPERS FOR BRIDGE
+% =========================
 
 get_valid_moves(Board, X, Y, Player, Moves) :-
     moves_from_piece(Board, X, Y, Player, Moves).

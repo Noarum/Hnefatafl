@@ -10,7 +10,6 @@
 :- dynamic ai_difficulty/1.
 
 % GAME INITIALIZATION
-board_size(11).
 opponent(attacker, defender).
 opponent(defender, attacker).
 player_piece(attacker, b).
@@ -18,8 +17,7 @@ player_piece(defender, w).
 terminal_status(attacker, attacker_won).
 terminal_status(defender, defender_won).
 
-init_game :-
-    board_size(Size),
+init_game(Size) :-
     initial_board(Size, Board),
     commit_state(Board, attacker, ongoing). % Attacker always starts
 
@@ -31,10 +29,20 @@ commit_state(Board, Player, Status) :-
     assertz(current_player(Player)),
     assertz(game_status(Status)).
 
-% API FOR GUI (M5)
-get_board(Board) :- current_board(Board).
 get_current_player(Player) :- current_player(Player).
 get_game_status(Status) :- game_status(Status).
+
+% Support for GUI valid destination highlighting
+get_valid_moves_for_piece(Row, Col, Moves) :-
+    current_board(Board),
+    current_player(Player),
+    % GUI uses (row, col), bridge uses (row, col), so we pass (Col, Row) to moves.pl
+    moves_from_piece(Board, Col, Row, Player, RawMoves),
+    % Convert move(SX, SY, NX, NY) to move(NewRow, NewCol) for GUI
+    findall(move(NY, NX), member(move(_, _, NX, NY), RawMoves), Moves).
+
+% API FOR GUI (M5)
+get_board(Board) :- current_board(Board).
 
 is_valid_human_move(FR, FC, TR, TC) :-
     game_status(ongoing),
@@ -67,6 +75,18 @@ make_ai_move(Difficulty) :-
         commit_state(Board, Player, Status),
         format("~w has no moves. ~w wins!~n", [Player, Opponent])
     ).
+
+apply_move(Board, X1, Y1, X2, Y2, Player, FinalBoard) :-
+    get_piece(Board, X1, Y1, Piece),
+    % Determine what cell was there before (throne, corner, or empty)
+    length(Board, S), Max is S - 1, Center is S // 2,
+    ( (X1=:=Center, Y1=:=Center) -> Empty = t
+    ; ( (X1=:=0, Y1=:=0) ; (X1=:=Max, Y1=:=0) ; (X1=:=0, Y1=:=Max) ; (X1=:=Max, Y1=:=Max) ) -> Empty = c
+    ; Empty = e
+    ),
+    set_piece(Board, X1, Y1, Empty, B1),
+    set_piece(B1, X2, Y2, Piece, B2),
+    apply_captures(B2, X2, Y2, Player, FinalBoard).
 
 perform_move(Player, X1, Y1, X2, Y2) :-
     player_piece(Player, BoardPlayer),
