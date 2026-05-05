@@ -14,8 +14,8 @@ choose_ai_move(Board, Player, Difficulty, BestMove) :-
     alpha_beta(Board, D, -1000001, 1000001, Player, BestMove, _).
 
 depth(easy, 1).
-depth(medium, 2).
-depth(hard, 3).
+depth(medium, 3).
+depth(hard, 5).
 
 % =========================
 % MOVE ORDERING
@@ -26,9 +26,18 @@ order_moves(Board, Player, Moves, OrderedMoves) :-
     findall(Score-Move,
         (member(Move, Moves), move_heuristic(Board, Player, Move, Score)),
         ScoredMoves),
-    sort(ScoredMoves, Sorted),  % sort/2 sorts by first argument (Score)
-    reverse(Sorted, Reversed),  % highest scores first
-    findall(Move, member(_-Move, Reversed), OrderedMoves).
+    sort(ScoredMoves, Sorted),
+    reverse(Sorted, Reversed),
+    % Pruning: Only keep the top 20 moves to avoid state explosion at depth 5
+    take(20, Reversed, Pruned),
+    findall(Move, member(_-Move, Pruned), OrderedMoves).
+
+take(0, _, []) :- !.
+take(_, [], []) :- !.
+take(N, [H|T], [H|Rest]) :-
+    N > 0,
+    N1 is N - 1,
+    take(N1, T, Rest).
 
 move_heuristic(Board, w, move(X1,Y1,X2,Y2), Score) :-
     % For defender: prioritize king moves toward corners

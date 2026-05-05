@@ -71,21 +71,25 @@ valid_move(Board, X1, Y1, X2, Y2, Player) :-
 % RAY-BASED GENERATION
 % =========================
 
-ray(Board, SX, SY, X, Y, DX, DY, Piece, [move(SX,SY,NX,NY)|Rest]) :-
+ray(Board, SX, SY, X, Y, DX, DY, Piece, Moves) :-
     NX is X + DX,
     NY is Y + DY,
-    within_bounds(Board, NX, NY),
-    get_piece(Board, NX, NY, Cell),
     (
-        Cell == e
-    ->  ray(Board, SX, SY, NX, NY, DX, DY, Piece, Rest)
-    ;
-        (Piece == k, (Cell == t ; Cell == c))
-    ->  Rest = []
-    ;
-        fail
+        within_bounds(Board, NX, NY),
+        get_piece(Board, NX, NY, Cell),
+        (
+            Cell == e
+        ->  Moves = [move(SX,SY,NX,NY)|Rest],
+            ray(Board, SX, SY, NX, NY, DX, DY, Piece, Rest)
+        ;
+            (Piece == k, (Cell == t ; Cell == c))
+        ->  Moves = [move(SX,SY,NX,NY)], !
+        ;   
+            Moves = [], !
+        )
+    ;   
+        Moves = [], !
     ).
-ray(_, _, _, _, _, _, _, _, []).
 
 % =========================
 % MOVE GENERATION
