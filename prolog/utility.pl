@@ -1,44 +1,118 @@
 % utility.pl
-% M5: heuristic evaluation function.
-% Consults board logic in Hnefatafl.pl and move logic in moves.pl.
+% Heuristic and utility functions for Hnefatafl
 
 :- consult('Hnefatafl.pl').
 :- consult('moves.pl').
 
-% --- Predicates ---
-manhattan_distance(_R1, _C1, _R2, _C2, _D) :-
-    % TODO: compute Manhattan distance between two cells.
-    fail.
+% =========================
+% HELPERS
+% =========================
 
-king_min_corner_distance(_KR, _KC, _MinDist) :-
-    % TODO: compute minimum king distance to any corner.
-    fail.
+board_size(Board, S) :-
+    length(Board, S).
 
-king_threat_count(_Board, _KR, _KC, _Count) :-
-    % TODO: count attacking threats around the king.
-    fail.
+get_king_pos(Board, KR, KC) :-
+    nth0(KR, Board, Row),
+    nth0(KC, Row, k), !.
 
-king_mobility(_Board, _KR, _KC, _Score) :-
-    % TODO: estimate king legal mobility from current square.
-    fail.
+% =========================
+% KING CAPTURE LOGIC (PDF compliant)
+% =========================
 
-material_score(_Board, _Score) :-
-    % TODO: evaluate material balance (defenders vs attackers).
-    fail.
+% A king is captured if surrounded on 4 sides by attackers, walls, or corners.
+% PDF: "If the king is against a wall... surrounding the other three sides."
+% PDF: "If the king is against a corner... surrounding the other two sides."
+is_king_captured(Board, KR, KC) :-
+    board_size(Board, S),
+    Max is S - 1,
+    findall(1,
+        (
+            member((DR,DC), [(1,0),(-1,0),(0,1),(0,-1)]),
+            NR is KR + DR,
+            NC is KC + DC,
+            (
+                \+ within_bounds(Board, NC, NR) ; % Wall is hostile
+                is_corner_cell(NC, NR, Max) ;     % Corner is hostile
+                (within_bounds(Board, NC, NR), get_piece(Board, NC, NR, b)) % Attacker
+            )
+        ),
+        L),
+    length(L, Count),
+    Count >= 4.
 
-open_escape_routes(_Board, _KR, _KC, _Count) :-
-    % TODO: count open routes from king to escape corners.
-    fail.
+is_corner_cell(0, 0, _).
+is_corner_cell(0, Max, Max).
+is_corner_cell(Max, 0, Max).
+is_corner_cell(Max, Max, Max).
 
-utility(_Board, _Player, _Score) :-
-    % Terminal checks first:
-    %   king surrounded on all relevant sides -> -10000 (attacker wins)
-    %   king on corner -> +10000 (defender wins)
-    % Weighted heuristic:
-    %   CornerScore   = (20 - CornerDist) * 50
-    %   ThreatScore   = -(Threats * 150)
-    %   MobilityScore = Mobility * 30
-    %   MaterialScore = Material * 40
-    %   RouteScore    = Routes * 80
-    % Negate final score if Player = attacker.
-    fail.
+% =========================
+% HEURISTICS
+% =========================
+
+% Manhattan distance to nearest corner (lower is better for defender)
+king_min_corner_distance(Board, KR, KC, MinDist) :-
+    board_size(Board, S),
+    Max is S - 1,
+    D1 is KR + KC,
+    D2 is KR + (Max - KC),
+    D3 is (Max - KR) + KC,
+    D4 is (Max - KR) + (Max - KC),
+    MinDist is min(min(D1, D2), min(D3, D4)).
+
+% Number of squares the king can move to
+king_mobility(Board, KR, KC, Score) :-
+    moves_from_piece(Board, KC, KR, defender, Moves),
+    length(Moves, Score).
+
+% Material balance
+material_score(Board, Score) :-
+    findall(1, (nth0(_, Board, Row), member(P, Row), P == w), Def),
+    findall(1, (nth0(_, Board, Row), member(P, Row), P == b), Att),
+    length(Def, Dn),
+    length(Att, An),
+    Score is Dn - An.
+
+% Check if the king has a clear straight path to any corner
+king_escape_routes(Board, KR, KC, Count) :-
+    board_size(Board, S),
+    Max is S - 1,
+    findall(1,
+        (
+            member((TR, TC), [(0,0), (0, Max), (Max, 0), (Max, Max)]),
+            (KR == TR ; KC == TC), % Must be in same row or column
+            path_clear(Board, KC, KR, TC, TR)
+        ),
+        L),
+    length(L, Count).
+
+% =========================
+% UTILITY
+% =========================
+
+% Always return score from the defender's perspective (Maximizer)
+utility(Board, _, Score) :-
+    ( check_win(Board, w) -> Score = 1000000 ;
+      check_win(Board, b) -> Score = -1000000 ;
+      get_king_pos(Board, KR, KC) ->
+        ( king_surrounded(Board, KC, KR) -> Score = -1000000 ;
+          calculate_utility(Board, KR, KC, Score)
+        )
+      ;
+      Score = -1000000 % King missing
+    ).
+
+calculate_utility(Board, KR, KC, Score) :-
+    board_size(Board, S),
+    Max is S - 1,
+    king_min_corner_distance(Board, KR, KC, Dist),
+    king_mobility(Board, KR, KC, Mob),
+    material_score(Board, Mat),
+    king_escape_routes(Board, KR, KC, Routes),
+    
+    % Heuristic weighting
+    CornerScore   is (Max * 2 - Dist) * 50,
+    MobilityScore is Mob * 20,
+    MaterialScore is Mat * 100,
+    RouteScore    is Routes * 2000, % Very high priority for escape paths
+    
+    Score is CornerScore + MobilityScore + MaterialScore + RouteScore.
