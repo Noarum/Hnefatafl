@@ -14,12 +14,39 @@ choose_ai_move(Board, Player, Difficulty, BestMove) :-
     alpha_beta(Board, D, -1000001, 1000001, Player, BestMove, _).
 
 depth(easy, 1).
-depth(medium, 3).
-depth(hard, 5).
+depth(medium, 2).
+depth(hard, 3).
 
 % =========================
-% ALPHA-BETA
+% MOVE ORDERING
 % =========================
+
+% Sort moves by heuristic value (higher = better for current player)
+order_moves(Board, Player, Moves, OrderedMoves) :-
+    findall(Score-Move,
+        (member(Move, Moves), move_heuristic(Board, Player, Move, Score)),
+        ScoredMoves),
+    sort(ScoredMoves, Sorted),  % sort/2 sorts by first argument (Score)
+    reverse(Sorted, Reversed),  % highest scores first
+    findall(Move, member(_-Move, Reversed), OrderedMoves).
+
+move_heuristic(Board, w, move(X1,Y1,X2,Y2), Score) :-
+    % For defender: prioritize king moves toward corners
+    (get_piece(Board, X1, Y1, k) ->
+        board_size(Board, S), Max is S - 1,
+        DistBefore is min(min(X1+Y1, X1+(Max-Y1)), min((Max-X1)+Y1, (Max-X1)+(Max-Y1))),
+        DistAfter is min(min(X2+Y2, X2+(Max-Y2)), min((Max-X2)+Y2, (Max-X2)+(Max-Y2))),
+        Score is (DistBefore - DistAfter) * 100  % Higher score for moves closer to corner
+    ; Score = 0  % Non-king moves get neutral score
+    ).
+
+move_heuristic(Board, b, move(X1,Y1,X2,Y2), Score) :-
+    % For attacker: prefer moves toward the center (where king usually is)
+    % Simple heuristic: distance to center
+    board_size(Board, S),
+    Center is S // 2,
+    DistFromCenter is abs(X2 - Center) + abs(Y2 - Center),
+    Score is 10 - DistFromCenter.  % Higher score for moves closer to center
 
 % Terminal state: Win/Loss
 alpha_beta(Board, _, _, _, _, none, Score) :-
@@ -33,7 +60,8 @@ alpha_beta(Board, 0, _, _, _, none, Score) :-
 % Internal node
 alpha_beta(Board, Depth, Alpha, Beta, Player, BestMove, BestScore) :-
     all_valid_moves(Board, Player, Moves),
-    ( Moves == [] ->
+    order_moves(Board, Player, Moves, OrderedMoves),
+    ( OrderedMoves == [] ->
         % No moves available: loss for the player whose turn it is
         ( Player == defender -> BestScore = -1000000 ; BestScore = 1000000 ),
         BestMove = none
@@ -41,10 +69,10 @@ alpha_beta(Board, Depth, Alpha, Beta, Player, BestMove, BestScore) :-
         NewDepth is Depth - 1,
         ( Player == defender ->
             % Maximizing
-            evaluate_max(Moves, Board, NewDepth, Alpha, Beta, none, -1000002, BestMove, BestScore)
+            evaluate_max(OrderedMoves, Board, NewDepth, Alpha, Beta, none, -1000002, BestMove, BestScore)
         ;
             % Minimizing
-            evaluate_min(Moves, Board, NewDepth, Alpha, Beta, none, 1000002, BestMove, BestScore)
+            evaluate_min(OrderedMoves, Board, NewDepth, Alpha, Beta, none, 1000002, BestMove, BestScore)
         )
     ).
 
