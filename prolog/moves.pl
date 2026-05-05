@@ -53,11 +53,12 @@ valid_move(Board, X1, Y1, X2, Y2, Player) :-
     get_piece(Board, X1, Y1, Piece),
     piece_belongs_to(Player, Piece),
     get_piece(Board, X2, Y2, Dest),
+    % Destination must be empty, or a special square the king is moving to
     (
         Dest == e ;
-        (Dest == t, Piece == k) ;
-        (Dest == c, Piece == k)
+        (Piece == k, (Dest == t ; Dest == c))
     ),
+    % Non-king pieces cannot land on restricted squares (already handled by Dest check above mostly)
     (
         is_restricted(X2, Y2, Board)
     ->  Piece == k
@@ -65,7 +66,24 @@ valid_move(Board, X1, Y1, X2, Y2, Player) :-
     ),
     ( X1 =:= X2 ; Y1 =:= Y2 ),
     \+ (X1 =:= X2, Y1 =:= Y2),
-    path_clear(Board, X1, Y1, X2, Y2).
+    path_clear(Board, X1, Y1, X2, Y2),
+    % Requirement: pieces may not stop inside a sandwich.
+    \+ landing_in_sandwich(Board, X2, Y2, Player, Piece).
+
+is_hostile(Board, X, Y, _) :- \+ within_bounds(Board, X, Y), !.
+is_hostile(Board, X, Y, Player) :-
+    get_piece(Board, X, Y, Piece),
+    (
+        ((Player == attacker ; Player == b), (Piece == w ; Piece == k ; Piece == t ; Piece == c)) ;
+        ((Player == defender ; Player == w), (Piece == b ; Piece == t ; Piece == c))
+    ).
+
+landing_in_sandwich(Board, X, Y, Player, PieceMoved) :-
+    PieceMoved \== k, % King is exempt from 2-sided sandwich rule
+    (
+        (H1 is X-1, H2 is X+1, is_hostile(Board, H1, Y, Player), is_hostile(Board, H2, Y, Player)) ;
+        (V1 is Y-1, V2 is Y+1, is_hostile(Board, X, V1, Player), is_hostile(Board, X, V2, Player))
+    ).
 
 % =========================
 % RAY-BASED GENERATION

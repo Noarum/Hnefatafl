@@ -12,6 +12,12 @@
 % GAME INITIALIZATION
 opponent(attacker, defender).
 opponent(defender, attacker).
+
+switch_player :-
+    current_player(P),
+    opponent(P, Opp),
+    retractall(current_player(_)),
+    assertz(current_player(Opp)).
 player_piece(attacker, b).
 player_piece(defender, w).
 terminal_status(attacker, attacker_won).
@@ -77,6 +83,7 @@ make_ai_move(Difficulty) :-
     ).
 
 apply_move(Board, X1, Y1, X2, Y2, Player, FinalBoard) :-
+    valid_move(Board, X1, Y1, X2, Y2, Player),
     get_piece(Board, X1, Y1, Piece),
     % Determine what cell was there before (throne, corner, or empty)
     length(Board, S), Max is S - 1, Center is S // 2,

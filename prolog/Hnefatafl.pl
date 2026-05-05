@@ -85,7 +85,13 @@ check_one_direction(Board, X, Y, DX, DY, Player, NewBoard) :-
     (
         within_bounds(Board, X2, Y2),
         get_piece(Board, X2, Y2, End),
-        (piece_belongs_to(Player, End) ; is_restricted(X2, Y2, Board))
+        (
+            % Attacker (b) can capture using another 'b' or a restricted square
+            (Player == b, (End == b ; is_restricted(X2, Y2, Board))) ;
+            % Defender (w) can capture using another 'w' or a restricted square, 
+            % but NOT the king (k) as the king is unarmed.
+            (Player == w, (End == w ; is_restricted(X2, Y2, Board)))
+        )
     ->  set_piece(Board, X1, Y1, e, NewBoard), !
     ;   NewBoard = Board, !
     ).

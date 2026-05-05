@@ -10,8 +10,8 @@
 
 choose_ai_move(Board, Player, Difficulty, BestMove) :-
     depth(Difficulty, D),
-    % Bounds should be slightly outside the range of win/loss scores
     alpha_beta(Board, D, -1000001, 1000001, Player, BestMove, _).
+    % true.
 
 depth(easy, 1).
 depth(medium, 3).
@@ -57,14 +57,14 @@ move_heuristic(Board, b, move(_,_,X2,Y2), Score) :-
     DistFromCenter is abs(X2 - Center) + abs(Y2 - Center),
     Score is 10 - DistFromCenter.  % Higher score for moves closer to center
 
-% Terminal state: Win/Loss
 alpha_beta(Board, _, _, _, _, none, Score) :-
     ( check_win(Board, w) ; check_win(Board, b) ),
-    utility(Board, w, Score), !.
+    ( check_win(Board, w) -> Player = defender ; Player = attacker ),
+    utility(Board, Player, Score), !.
 
 % Leaf node: Max depth reached
 alpha_beta(Board, 0, _, _, _, none, Score) :-
-    utility(Board, w, Score), !.
+    utility(Board, defender, Score), !.
 
 % Internal node
 alpha_beta(Board, Depth, Alpha, Beta, Player, BestMove, BestScore) :-
@@ -91,24 +91,26 @@ alpha_beta(Board, Depth, Alpha, Beta, Player, BestMove, BestScore) :-
 
 evaluate_max([], _, _, _, _, BestMove, BestScore, BestMove, BestScore).
 evaluate_max([move(X1,Y1,X2,Y2)|Rest], Board, Depth, Alpha, Beta, CurBestMove, CurBestScore, BestMove, BestScore) :-
-    apply_move(Board, X1, Y1, X2, Y2, w, NewBoard),
-    alpha_beta(NewBoard, Depth, Alpha, Beta, b, _, Score),
-    
-    ( Score > CurBestScore ->
-        NextBestScore = Score,
-        NextBestMove = move(X1,Y1,X2,Y2)
-    ;
-        NextBestScore = CurBestScore,
-        NextBestMove = CurBestMove
-    ),
-    
-    NewAlpha is max(Alpha, NextBestScore),
-    ( Beta =< NewAlpha ->
-        % Pruning
-        BestMove = NextBestMove,
-        BestScore = NextBestScore
-    ;
-        evaluate_max(Rest, Board, Depth, NewAlpha, Beta, NextBestMove, NextBestScore, BestMove, BestScore)
+    (
+        apply_move(Board, X1, Y1, X2, Y2, w, NewBoard),
+        alpha_beta(NewBoard, Depth, Alpha, Beta, b, _, Score)
+    ->  ( Score > CurBestScore ->
+            NextBestScore = Score,
+            NextBestMove = move(X1,Y1,X2,Y2)
+        ;
+            NextBestScore = CurBestScore,
+            NextBestMove = CurBestMove
+        ),
+        NewAlpha is max(Alpha, NextBestScore),
+        ( Beta =< NewAlpha ->
+            % Pruning
+            BestMove = NextBestMove,
+            BestScore = NextBestScore
+        ;
+            evaluate_max(Rest, Board, Depth, NewAlpha, Beta, NextBestMove, NextBestScore, BestMove, BestScore)
+        )
+    ;   % If move fails (should not happen with all_valid_moves), just skip it
+        evaluate_max(Rest, Board, Depth, Alpha, Beta, CurBestMove, CurBestScore, BestMove, BestScore)
     ).
 
 % =========================
@@ -117,22 +119,24 @@ evaluate_max([move(X1,Y1,X2,Y2)|Rest], Board, Depth, Alpha, Beta, CurBestMove, C
 
 evaluate_min([], _, _, _, _, BestMove, BestScore, BestMove, BestScore).
 evaluate_min([move(X1,Y1,X2,Y2)|Rest], Board, Depth, Alpha, Beta, CurBestMove, CurBestScore, BestMove, BestScore) :-
-    apply_move(Board, X1, Y1, X2, Y2, b, NewBoard),
-    alpha_beta(NewBoard, Depth, Alpha, Beta, w, _, Score),
-    
-    ( Score < CurBestScore ->
-        NextBestScore = Score,
-        NextBestMove = move(X1,Y1,X2,Y2)
-    ;
-        NextBestScore = CurBestScore,
-        NextBestMove = CurBestMove
-    ),
-    
-    NewBeta is min(Beta, NextBestScore),
-    ( NewBeta =< Alpha ->
-        % Pruning
-        BestMove = NextBestMove,
-        BestScore = NextBestScore
-    ;
-        evaluate_min(Rest, Board, Depth, Alpha, NewBeta, NextBestMove, NextBestScore, BestMove, BestScore)
+    (
+        apply_move(Board, X1, Y1, X2, Y2, b, NewBoard),
+        alpha_beta(NewBoard, Depth, Alpha, Beta, w, _, Score)
+    ->  ( Score < CurBestScore ->
+            NextBestScore = Score,
+            NextBestMove = move(X1,Y1,X2,Y2)
+        ;
+            NextBestScore = CurBestScore,
+            NextBestMove = CurBestMove
+        ),
+        NewBeta is min(Beta, NextBestScore),
+        ( NewBeta =< Alpha ->
+            % Pruning
+            BestMove = NextBestMove,
+            BestScore = NextBestScore
+        ;
+            evaluate_min(Rest, Board, Depth, Alpha, NewBeta, NextBestMove, NextBestScore, BestMove, BestScore)
+        )
+    ;   % If move fails, skip it
+        evaluate_min(Rest, Board, Depth, Alpha, Beta, CurBestMove, CurBestScore, BestMove, BestScore)
     ).
