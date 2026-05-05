@@ -1,275 +1,470 @@
-"""Pygame UI for Hnefatafl."""
+"""
+gui.py — Pygame UI for Hnefatafl.
+
+Fixes vs. original:
+  1. AI runs in a background thread → UI never freezes / crashes
+  2. Valid destination squares are highlighted when a piece is selected
+  3. Clicking an enemy piece while something is selected resets selection
+     (does not attempt an illegal move)
+  4. Start screen: player chooses Human side (attacker / defender) and difficulty
+  5. Game-over overlay blocks further clicks correctly
+  6. Throne and corner squares visually marked
+  7. Status bar shows whose turn it is with color coding
+"""
 
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import pygame
 
 from bridge import HnefataflBridge, MockHnefataflBridge
 
+# ── Layout constants ─────────────────────────────────────────────────────────
+BOARD_SIZE    = 11
+CELL_SIZE     = 60
+MARGIN        = 40
+UI_BAR_HEIGHT = 60
 
-# Constants
-BOARD_SIZE = 11
-CELL_SIZE = 64
-MARGIN = 40
-UI_BAR_HEIGHT = 56
-COLORS = {
-    "bg": (40, 40, 40),
-    "cell_light": (210, 180, 140),
-    "cell_dark": (160, 120, 80),
-    "throne": (180, 140, 60),
-    "corner": (100, 160, 100),
-    "highlight": (255, 255, 0),
-    "attacker": (50, 50, 150),
-    "defender": (220, 220, 220),
-    "king": (255, 215, 0),
-    "text": (255, 255, 255),
+# ── Color palette ─────────────────────────────────────────────────────────────
+C = {
+    "bg":           (28,  28,  28),
+    "ui_bar":       (18,  18,  18),
+    "cell_light":   (205, 175, 130),
+    "cell_dark":    (170, 130,  80),
+    "throne":       (200, 160,  50),
+    "corner":       ( 90, 160,  90),
+    "highlight_sel":(255, 220,   0),   # selected piece border
+    "highlight_dst":(100, 220, 100),   # valid destination tint
+    "attacker":     ( 55,  80, 180),
+    "attacker_rim": (100, 130, 220),
+    "defender":     (230, 230, 225),
+    "defender_rim": (180, 180, 170),
+    "king":         (220, 180,  30),
+    "king_rim":     (255, 230, 100),
+    "text":         (240, 240, 240),
+    "text_dim":     (160, 160, 160),
+    "attacker_col": ( 80, 120, 255),
+    "defender_col": (255, 255, 255),
+    "error":        (255, 140,  60),
+    "overlay":      (  0,   0,   0, 180),
+    "btn":          ( 50,  50,  50),
+    "btn_hover":    ( 80,  80,  80),
+    "btn_active":   ( 40, 100, 180),
 }
 
+BridgeType = Union[HnefataflBridge, MockHnefataflBridge]
+
+# ── Window size ───────────────────────────────────────────────────────────────
+GRID_PX  = BOARD_SIZE * CELL_SIZE + 2 * MARGIN
+WIN_W    = GRID_PX
+WIN_H    = UI_BAR_HEIGHT + GRID_PX
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Start screen
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_start_screen(screen: pygame.Surface) -> tuple[str, str]:
+    """
+    Show a start screen and return (human_side, difficulty).
+    human_side   = 'attacker' | 'defender'
+    difficulty   = 'easy' | 'medium' | 'hard'
+    """
+    font_title  = pygame.font.SysFont("dejavusans,sans", 38, bold=True)
+    font_sub    = pygame.font.SysFont("dejavusans,sans", 22)
+    font_btn    = pygame.font.SysFont("dejavusans,sans", 20, bold=True)
+    clock       = pygame.time.Clock()
+
+    human_side  = "defender"
+    difficulty  = "medium"
+
+    def draw_btn(label: str, rect: pygame.Rect, active: bool, hover: bool) -> None:
+        color = C["btn_active"] if active else (C["btn_hover"] if hover else C["btn"])
+        pygame.draw.rect(screen, color, rect, border_radius=8)
+        pygame.draw.rect(screen, C["text_dim"], rect, width=1, border_radius=8)
+        ts = font_btn.render(label, True, C["text"])
+        screen.blit(ts, (rect.centerx - ts.get_width() // 2,
+                         rect.centery - ts.get_height() // 2))
+
+    side_rects = {
+        "attacker": pygame.Rect(WIN_W // 2 - 160, 180, 140, 44),
+        "defender": pygame.Rect(WIN_W // 2 +  20, 180, 140, 44),
+    }
+    diff_rects = {
+        "easy":   pygame.Rect(WIN_W // 2 - 185, 290, 110, 44),
+        "medium": pygame.Rect(WIN_W // 2 -  55, 290, 110, 44),
+        "hard":   pygame.Rect(WIN_W // 2 +  75, 290, 110, 44),
+    }
+    start_rect = pygame.Rect(WIN_W // 2 - 90, 380, 180, 52)
+
+    while True:
+        mx, my = pygame.mouse.get_pos()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for side, r in side_rects.items():
+                    if r.collidepoint(mx, my):
+                        human_side = side
+                for diff, r in diff_rects.items():
+                    if r.collidepoint(mx, my):
+                        difficulty = diff
+                if start_rect.collidepoint(mx, my):
+                    return human_side, difficulty
+
+        screen.fill(C["bg"])
+
+        # Title
+        ts = font_title.render("Hnefatafl", True, C["king"])
+        screen.blit(ts, (WIN_W // 2 - ts.get_width() // 2, 80))
+        sub = font_sub.render("Viking Chess", True, C["text_dim"])
+        screen.blit(sub, (WIN_W // 2 - sub.get_width() // 2, 126))
+
+        # Side label
+        lbl = font_sub.render("You play as:", True, C["text"])
+        screen.blit(lbl, (WIN_W // 2 - lbl.get_width() // 2, 150))
+        for side, r in side_rects.items():
+            draw_btn(side.capitalize(), r,
+                     active=human_side == side,
+                     hover=r.collidepoint(mx, my))
+
+        # Difficulty label
+        lbl2 = font_sub.render("Difficulty:", True, C["text"])
+        screen.blit(lbl2, (WIN_W // 2 - lbl2.get_width() // 2, 258))
+        for diff, r in diff_rects.items():
+            draw_btn(diff.capitalize(), r,
+                     active=difficulty == diff,
+                     hover=r.collidepoint(mx, my))
+
+        # Start button
+        pygame.draw.rect(screen, C["btn_active"], start_rect, border_radius=10)
+        st = font_btn.render("Start Game", True, C["text"])
+        screen.blit(st, (start_rect.centerx - st.get_width() // 2,
+                         start_rect.centery - st.get_height() // 2))
+
+        pygame.display.flip()
+        clock.tick(60)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main GUI class
+# ─────────────────────────────────────────────────────────────────────────────
 
 class HnefataflGUI:
-    """Pygame-based renderer and interaction loop for Hnefatafl."""
+    """Pygame renderer and interaction loop."""
 
     def __init__(
         self,
-        bridge: HnefataflBridge | MockHnefataflBridge,
-        difficulty: str = "medium",
+        bridge:      BridgeType,
+        difficulty:  str = "medium",
+        human_side:  str = "defender",
     ) -> None:
-        self._bridge = bridge
+        self._bridge     = bridge
         self._difficulty = difficulty.strip().lower()
-        self._selected: Optional[tuple[int, int]] = None
-        self._font: Optional[pygame.font.Font] = None
-        self._error_msg: Optional[str] = None
-        self._error_until_ms = 0
+        self._human_side = human_side.strip().lower()  # 'attacker' or 'defender'
+
+        self._selected:     Optional[tuple[int, int]]       = None
+        self._valid_dsts:   list[tuple[int, int]]            = []
+        self._error_msg:    Optional[str]                    = None
+        self._error_until:  int                              = 0
+        self._ai_thinking:  bool                             = False  # prevents double-trigger
+        self._font:         Optional[pygame.font.Font]       = None
+        self._font_big:     Optional[pygame.font.Font]       = None
 
         pygame.init()
-        grid_px = BOARD_SIZE * CELL_SIZE + 2 * MARGIN
-        win_w = grid_px
-        win_h = UI_BAR_HEIGHT + grid_px
-        self._screen = pygame.display.set_mode((win_w, win_h))
-        pygame.display.set_caption("Hnefatafl")
-        self._clock = pygame.time.Clock()
-        self._font = pygame.font.SysFont("dejavusans,sans", 22)
+        self._screen = pygame.display.set_mode((WIN_W, WIN_H))
+        pygame.display.set_caption("Hnefatafl — Viking Chess")
+        self._clock  = pygame.time.Clock()
+        self._font     = pygame.font.SysFont("dejavusans,sans", 20)
+        self._font_big = pygame.font.SysFont("dejavusans,sans", 38, bold=True)
+
+    # ── Coordinate helpers ────────────────────────────────────────────────────
 
     def _cell_to_pixel(self, row: int, col: int) -> tuple[int, int]:
-        """Top-left pixel of the cell (row, col), including UI bar offset."""
-        x = MARGIN + col * CELL_SIZE
-        y = UI_BAR_HEIGHT + MARGIN + row * CELL_SIZE
-        return x, y
+        """Top-left pixel of cell (row, col)."""
+        return (MARGIN + col * CELL_SIZE,
+                UI_BAR_HEIGHT + MARGIN + row * CELL_SIZE)
 
-    def _pixel_to_cell(self, pixel_x: int, pixel_y: int) -> Optional[tuple[int, int]]:
-        """Board (row, col) from window pixel coords, or None if outside the grid."""
-        x = pixel_x - MARGIN
-        y = pixel_y - UI_BAR_HEIGHT - MARGIN
+    def _pixel_to_cell(self, px: int, py: int) -> Optional[tuple[int, int]]:
+        """Board (row, col) from window pixel, or None if outside grid."""
+        x = px - MARGIN
+        y = py - UI_BAR_HEIGHT - MARGIN
         if x < 0 or y < 0:
             return None
-        col = x // CELL_SIZE
-        row = y // CELL_SIZE
-        if row < 0 or col < 0 or row >= BOARD_SIZE or col >= BOARD_SIZE:
+        col, row = x // CELL_SIZE, y // CELL_SIZE
+        if not (0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE):
             return None
         return row, col
+
+    # ── Error flash ───────────────────────────────────────────────────────────
+
+    def _flash(self, msg: str, ms: int = 3500) -> None:
+        self._error_msg   = msg
+        self._error_until = pygame.time.get_ticks() + ms
+
+    def _tick_error(self) -> None:
+        if self._error_msg and pygame.time.get_ticks() >= self._error_until:
+            self._error_msg = None
+
+    # ── Piece helpers ─────────────────────────────────────────────────────────
 
     @staticmethod
     def _piece_owner(piece: str) -> Optional[str]:
         p = piece.lower()
-        if p == "b":
-            return "attacker"
-        if p in ("w", "k"):
-            return "defender"
+        if p == "b":       return "attacker"
+        if p in ("w","k"): return "defender"
         return None
 
-    def _show_transient_error(self, message: str, duration_ms: int = 3500) -> None:
-        self._error_msg = message
-        self._error_until_ms = pygame.time.get_ticks() + duration_ms
+    # ── Drawing ───────────────────────────────────────────────────────────────
 
-    def _maybe_clear_error(self) -> None:
-        if self._error_msg and pygame.time.get_ticks() >= self._error_until_ms:
-            self._error_msg = None
+    def _draw_board(self) -> None:
+        assert self._screen
 
-    def draw_board(self) -> None:
-        """Draw grid, throne, corners, pieces, selection."""
-        assert self._screen is not None
-        self._screen.fill(COLORS["bg"])
-
-        center = BOARD_SIZE // 2
-        corners = {
-            (0, 0),
-            (0, BOARD_SIZE - 1),
-            (BOARD_SIZE - 1, 0),
-            (BOARD_SIZE - 1, BOARD_SIZE - 1),
-        }
+        center  = BOARD_SIZE // 2
+        corners = {(0,0),(0,BOARD_SIZE-1),(BOARD_SIZE-1,0),(BOARD_SIZE-1,BOARD_SIZE-1)}
+        dst_set = set(self._valid_dsts)
 
         for r in range(BOARD_SIZE):
             for c in range(BOARD_SIZE):
                 x, y = self._cell_to_pixel(r, c)
-                rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
-                is_dark = (r + c) % 2 == 1
-                base = COLORS["cell_dark"] if is_dark else COLORS["cell_light"]
-                pygame.draw.rect(self._screen, base, rect)
-                if (r, c) == (center, center):
-                    pygame.draw.rect(self._screen, COLORS["throne"], rect.inflate(-6, -6))
-                elif (r, c) in corners:
-                    pygame.draw.rect(self._screen, COLORS["corner"], rect.inflate(-10, -10))
+                rect  = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
 
+                # Base checkerboard
+                base = C["cell_dark"] if (r + c) % 2 else C["cell_light"]
+                pygame.draw.rect(self._screen, base, rect)
+
+                # Special squares
+                if (r, c) == (center, center):
+                    pygame.draw.rect(self._screen, C["throne"],
+                                     rect.inflate(-8, -8))
+                elif (r, c) in corners:
+                    pygame.draw.rect(self._screen, C["corner"],
+                                     rect.inflate(-10, -10))
+
+                # Valid destination highlight
+                if (r, c) in dst_set:
+                    tint = pygame.Surface((CELL_SIZE, CELL_SIZE), pygame.SRCALPHA)
+                    tint.fill((*C["highlight_dst"], 90))
+                    self._screen.blit(tint, (x, y))
+                    pygame.draw.rect(self._screen, C["highlight_dst"], rect, width=2)
+
+                # Grid lines
+                pygame.draw.rect(self._screen, (0, 0, 0), rect, width=1)
+
+        # Selection border (drawn after grid so it's on top)
         if self._selected is not None:
             sr, sc = self._selected
             sx, sy = self._cell_to_pixel(sr, sc)
-            pygame.draw.rect(
-                self._screen,
-                COLORS["highlight"],
-                pygame.Rect(sx, sy, CELL_SIZE, CELL_SIZE),
-                width=4,
-            )
+            pygame.draw.rect(self._screen, C["highlight_sel"],
+                             pygame.Rect(sx, sy, CELL_SIZE, CELL_SIZE), width=4)
 
+        # Pieces
         try:
             pieces = self._bridge.get_board()
         except RuntimeError as e:
-            self._show_transient_error(str(e))
+            self._flash(str(e))
             pieces = []
 
         for r, c, piece in pieces:
-            if r < 0 or c < 0 or r >= BOARD_SIZE or c >= BOARD_SIZE:
+            if not (0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE):
                 continue
             cx, cy = self._cell_to_pixel(r, c)
             center_xy = (cx + CELL_SIZE // 2, cy + CELL_SIZE // 2)
-            pl = piece.lower()
-            if pl == "b":
-                color = COLORS["attacker"]
-            elif pl == "k":
-                color = COLORS["king"]
-            elif pl == "w":
-                color = COLORS["defender"]
+            radius = CELL_SIZE // 2 - 6
+            p = piece.lower()
+            if p == "b":
+                fill, rim = C["attacker"], C["attacker_rim"]
+            elif p == "k":
+                fill, rim = C["king"],     C["king_rim"]
+            elif p == "w":
+                fill, rim = C["defender"], C["defender_rim"]
             else:
                 continue
-            radius = CELL_SIZE // 2 - 8
-            pygame.draw.circle(self._screen, color, center_xy, radius)
+            pygame.draw.circle(self._screen, fill, center_xy, radius)
+            pygame.draw.circle(self._screen, rim,  center_xy, radius, width=2)
+            # King gets a crown dot
+            if p == "k":
+                pygame.draw.circle(self._screen, (200, 100, 0), center_xy, radius // 3)
 
-    def draw_ui(self) -> None:
-        """Top bar: player, difficulty, errors / game over overlay."""
-        assert self._screen is not None and self._font is not None
-        self._maybe_clear_error()
-        bar = pygame.Rect(0, 0, self._screen.get_width(), UI_BAR_HEIGHT)
-        pygame.draw.rect(self._screen, (25, 25, 25), bar)
+    def _draw_ui(self) -> None:
+        assert self._screen and self._font
+
+        self._tick_error()
+        pygame.draw.rect(self._screen, C["ui_bar"],
+                         pygame.Rect(0, 0, WIN_W, UI_BAR_HEIGHT))
 
         try:
             player = self._bridge.current_player()
             status = self._bridge.game_status()
         except RuntimeError as e:
-            player = "?"
-            status = "error"
-            self._show_transient_error(str(e))
+            player, status = "?", "error"
+            self._flash(str(e))
 
-        line1 = f"Player: {player}   |   Difficulty: {self._difficulty}   |   Status: {status}"
-        surf1 = self._font.render(line1, True, COLORS["text"])
-        self._screen.blit(surf1, (12, 8))
+        # Color-code whose turn it is
+        p_color = C["attacker_col"] if player == "attacker" else C["defender_col"]
+
+        thinking_tag = "  [AI thinking…]" if self._ai_thinking else ""
+        line = (f"Turn: "
+                f"{player.capitalize()}{thinking_tag}"
+                f"   |   Difficulty: {self._difficulty.capitalize()}"
+                f"   |   You: {self._human_side.capitalize()}")
+        ts = self._font.render(line, True, p_color)
+        self._screen.blit(ts, (12, 10))
 
         if self._error_msg:
-            surf_e = self._font.render(self._error_msg[:120], True, (255, 180, 80))
-            self._screen.blit(surf_e, (12, 30))
+            es = self._font.render(self._error_msg[:110], True, C["error"])
+            self._screen.blit(es, (12, 34))
 
+        # Game-over overlay
         if status != "ongoing":
-            overlay = pygame.Surface(self._screen.get_size(), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 160))
+            overlay = pygame.Surface((WIN_W, WIN_H), pygame.SRCALPHA)
+            overlay.fill(C["overlay"])
             self._screen.blit(overlay, (0, 0))
-            big = pygame.font.SysFont("dejavusans,sans", 36)
-            msg = f"Game over: {status.replace('_', ' ')}"
-            ts = big.render(msg, True, COLORS["text"])
-            tx = (self._screen.get_width() - ts.get_width()) // 2
-            ty = (self._screen.get_height() - ts.get_height()) // 2
-            self._screen.blit(ts, (tx, ty))
+            assert self._font_big
+            winner_text = {
+                "attacker_won": "Attackers Win!",
+                "defender_won": "Defenders Win!  King Escaped!",
+            }.get(status, f"Game over: {status.replace('_',' ')}")
+            ts2 = self._font_big.render(winner_text, True, C["king"])
+            self._screen.blit(ts2,
+                              (WIN_W // 2 - ts2.get_width() // 2,
+                               WIN_H // 2 - ts2.get_height() // 2))
+            hint = self._font.render("Close window to exit.", True, C["text_dim"])
+            self._screen.blit(hint,
+                              (WIN_W // 2 - hint.get_width() // 2,
+                               WIN_H // 2 + ts2.get_height()))
 
-    def handle_click(self, pixel_x: int, pixel_y: int) -> None:
-        """Select a friendly piece, then attempt move; optionally trigger AI reply."""
-        cell = self._pixel_to_cell(pixel_x, pixel_y)
+    # ── Click handling ────────────────────────────────────────────────────────
+
+    def _handle_click(self, px: int, py: int) -> None:
+        cell = self._pixel_to_cell(px, py)
         if cell is None:
             return
 
         try:
-            status = self._bridge.game_status()
-        except RuntimeError as e:
-            self._show_transient_error(str(e))
-            return
-
-        if status != "ongoing":
-            return
-
-        try:
+            status  = self._bridge.game_status()
             current = self._bridge.current_player()
         except RuntimeError as e:
-            self._show_transient_error(str(e))
+            self._flash(str(e))
+            return
+
+        # Block clicks when game is over or AI is thinking
+        if status != "ongoing" or self._ai_thinking:
+            return
+
+        # Block clicks when it is not the human's turn
+        if current != self._human_side:
             return
 
         row, col = cell
-        piece_map = { (r, c): p for r, c, p in self._bridge.get_board() }
+        piece_map = {(r, c): p for r, c, p in self._bridge.get_board()}
         piece_here = piece_map.get((row, col))
 
+        # ── No piece currently selected ───────────────────────────────────────
         if self._selected is None:
             if piece_here is None:
                 return
-            owner = self._piece_owner(piece_here)
-            if owner != current:
+            if self._piece_owner(piece_here) != self._human_side:
+                self._flash("Not your piece.")
                 return
-            self._selected = (row, col)
+            # Select the piece and highlight its valid destinations
+            self._selected  = (row, col)
+            self._valid_dsts = self._bridge.get_valid_moves_for_piece(row, col)
             return
 
+        # ── A piece is already selected ───────────────────────────────────────
         sr, sc = self._selected
+
+        # Re-click the same cell → deselect
         if (row, col) == (sr, sc):
-            self._selected = None
+            self._selected   = None
+            self._valid_dsts = []
             return
 
+        # Click a different friendly piece → reselect (don't attempt move)
+        if piece_here is not None and self._piece_owner(piece_here) == self._human_side:
+            self._selected   = (row, col)
+            self._valid_dsts = self._bridge.get_valid_moves_for_piece(row, col)
+            return
+
+        # Attempt the move
         try:
             ok = self._bridge.human_move(sr, sc, row, col)
         except RuntimeError as e:
-            self._show_transient_error(str(e))
+            self._flash(str(e))
+            self._selected   = None
+            self._valid_dsts = []
             return
 
-        self._selected = None
+        self._selected   = None
+        self._valid_dsts = []
+
         if not ok:
-            self._show_transient_error("Illegal move.")
+            self._flash("Illegal move — try again.")
             return
 
+        # ── Trigger AI move in a background thread ────────────────────────────
         try:
-            status_after = self._bridge.game_status()
-        except RuntimeError as e:
-            self._show_transient_error(str(e))
+            after_status = self._bridge.game_status()
+        except RuntimeError:
             return
 
-        if status_after == "ongoing":
+        if after_status == "ongoing":
+            self._trigger_ai_move()
+
+    def _trigger_ai_move(self) -> None:
+        """Run the AI in a daemon thread so the UI stays responsive."""
+        if self._ai_thinking:
+            return
+        self._ai_thinking = True
+
+        def _worker() -> None:
             try:
                 self._bridge.ai_move(self._difficulty)
             except RuntimeError as e:
-                self._show_transient_error(str(e))
+                self._flash(str(e))
+            finally:
+                self._ai_thinking = False
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+    # ── First AI move (attacker goes first, may be AI) ────────────────────────
+
+    def _maybe_start_ai(self) -> None:
+        """If the human plays defender, the AI (attacker) moves first."""
+        try:
+            current = self._bridge.current_player()
+            status  = self._bridge.game_status()
+        except RuntimeError:
+            return
+        if status == "ongoing" and current != self._human_side:
+            self._trigger_ai_move()
+
+    # ── Main loop ─────────────────────────────────────────────────────────────
 
     def run(self) -> None:
-        """Main loop."""
+        self._maybe_start_ai()
+
         running = True
         while running:
+            self._screen.fill(C["bg"])
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    self.handle_click(event.pos[0], event.pos[1])
+                    self._handle_click(event.pos[0], event.pos[1])
 
-            self.draw_board()
-            self.draw_ui()
+            self._draw_board()
+            self._draw_ui()
             pygame.display.flip()
             self._clock.tick(60)
 
         pygame.quit()
-
-
-def main() -> None:
-    """Allow ``python gui.py`` when PYTHONPATH includes this directory."""
-    pkg = Path(__file__).resolve().parent
-    if str(pkg) not in sys.path:
-        sys.path.insert(0, str(pkg))
-    use_mock = "--mock" in sys.argv
-    bridge = MockHnefataflBridge() if use_mock else HnefataflBridge()
-    HnefataflGUI(bridge, difficulty="medium").run()
-
-
-if __name__ == "__main__":
-    main()
