@@ -3,19 +3,114 @@
 
 :- consult('moves.pl').
 :- consult('utility.pl').
+:- use_module(library(random)).
 
 % =========================
 % AI ENTRY
 % =========================
 
-choose_ai_move(Board, Player, Difficulty, BestMove) :-
-    depth(Difficulty, D),
-    % Bounds should be slightly outside the range of win/loss scores
-    alpha_beta(Board, D, -1000001, 1000001, Player, BestMove, _).
+% Convert board piece notation (b/w/k) to player side (attacker/defender)
+normalize_player(b, attacker) :- !.
+normalize_player(w, defender) :- !.
+normalize_player(attacker, attacker) :- !.
+normalize_player(defender, defender) :- !.
 
-depth(easy, 1).
-depth(medium, 3).
-depth(hard, 5).
+choose_ai_move(Board, Player, easy, BestMove) :-
+    normalize_player(Player, NormalizedPlayer),
+    all_valid_moves(Board, NormalizedPlayer, Moves),
+    Moves \= [],
+    random_member(BestMove, Moves).
+
+choose_ai_move(Board, Player, medium, BestMove) :-
+    normalize_player(Player, NormalizedPlayer),
+    all_valid_moves(Board, NormalizedPlayer, Moves),
+    Moves \= [],
+    greedy_move(Board, NormalizedPlayer, Moves, BestMove).
+
+choose_ai_move(Board, Player, hard, BestMove) :-
+    normalize_player(Player, NormalizedPlayer),
+    depth(hard, D),
+    all_valid_moves(Board, NormalizedPlayer, Moves),
+    Moves \= [],
+    alpha_beta(Board, D, -1000001, 1000001, NormalizedPlayer, BestMove, _).
+
+depth(hard, 2).
+
+% Greedy one-ply move selection for medium difficulty.
+greedy_move(Board, Player, Moves, BestMove) :-
+    evaluate_moves(Moves, Board, Player, ScoreMoves),
+    select_best_moves(Player, ScoreMoves, BestMoves),
+    random_member(BestMove, BestMoves).
+
+evaluate_moves([], _, _, []).
+evaluate_moves([move(X1,Y1,X2,Y2)|Rest], Board, Player, [Score-move(X1,Y1,X2,Y2)|Tail]) :-
+    apply_move(Board, X1, Y1, X2, Y2, Player, NewBoard),
+    utility(NewBoard, defender, Score),
+    evaluate_moves(Rest, Board, Player, Tail).
+
+select_best_moves(defender, ScoreMoves, BestMoves) :-
+    max_score_moves(ScoreMoves, BestMoves).
+select_best_moves(attacker, ScoreMoves, BestMoves) :-
+    min_score_moves(ScoreMoves, BestMoves).
+
+max_score_moves([Score-Move|Rest], BestMoves) :-
+    max_score_moves(Rest, Score, [Move], _BestScore, BestMoves).
+
+max_score_moves([], BestScore, BestMoves, BestScore, BestMoves).
+max_score_moves([Score-Move|Rest], CurrentBest, CurrentMoves, BestScore, BestMoves) :-
+    ( Score > CurrentBest ->
+        NextBest = Score,
+        NextMoves = [Move]
+    ; Score == CurrentBest ->
+        NextBest = CurrentBest,
+        append(CurrentMoves, [Move], NextMoves)
+    ;   NextBest = CurrentBest,
+        NextMoves = CurrentMoves
+    ),
+    max_score_moves(Rest, NextBest, NextMoves, BestScore, BestMoves).
+
+min_score_moves([Score-Move|Rest], BestMoves) :-
+    min_score_moves(Rest, Score, [Move], _BestScore, BestMoves).
+
+min_score_moves([], BestScore, BestMoves, BestScore, BestMoves).
+min_score_moves([Score-Move|Rest], CurrentBest, CurrentMoves, BestScore, BestMoves) :-
+    ( Score < CurrentBest ->
+        NextBest = Score,
+        NextMoves = [Move]
+    ; Score == CurrentBest ->
+        NextBest = CurrentBest,
+        append(CurrentMoves, [Move], NextMoves)
+    ;   NextBest = CurrentBest,
+        NextMoves = CurrentMoves
+    ),
+    min_score_moves(Rest, NextBest, NextMoves, BestScore, BestMoves).
+
+order_moves(Moves, Board, defender, OrderedMoves) :-
+    findall(Score-move(X1,Y1,X2,Y2),
+        (
+            member(move(X1,Y1,X2,Y2), Moves),
+            apply_move(Board, X1, Y1, X2, Y2, defender, NewBoard),
+            utility(NewBoard, defender, Score)
+        ),
+        ScoreMoves),
+    keysort(ScoreMoves, Sorted),
+    reverse(Sorted, Reversed),
+    extract_moves(Reversed, OrderedMoves).
+
+order_moves(Moves, Board, attacker, OrderedMoves) :-
+    findall(Score-move(X1,Y1,X2,Y2),
+        (
+            member(move(X1,Y1,X2,Y2), Moves),
+            apply_move(Board, X1, Y1, X2, Y2, attacker, NewBoard),
+            utility(NewBoard, defender, Score)
+        ),
+        ScoreMoves),
+    keysort(ScoreMoves, Sorted),
+    extract_moves(Sorted, OrderedMoves).
+
+extract_moves([], []).
+extract_moves([_-Move|Rest], [Move|Tail]) :-
+    extract_moves(Rest, Tail).
 
 % =========================
 % ALPHA-BETA
