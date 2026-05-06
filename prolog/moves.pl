@@ -9,6 +9,10 @@ piece_belongs_to(attacker, b).
 piece_belongs_to(defender, w).
 piece_belongs_to(defender, k).
 
+opponent(b, defender).
+opponent(w, attacker).
+opponent(k, attacker).
+
 % =========================
 % RESTRICTED CELLS
 % =========================
@@ -43,6 +47,30 @@ path_clear(Board, X1, Y1, X2, Y2) :-
         path_clear(Board, NextX, NextY, X2, Y2)
     ).
 
+in_sandwich(Board, X1, X2, Y2, Player) :-
+    opponent(Player, Opp),
+    (
+        X1 =:= X2
+
+    ->
+        AdjX1 is X2 + 1,
+        get_piece(Board, AdjX1, Y2, Piece1),
+        piece_belongs_to(Opp, Piece1),
+
+        AdjX2 is X2 - 1,
+        get_piece(Board, AdjX2, Y2, Piece2),
+        piece_belongs_to(Opp, Piece2)
+
+    ;
+        AdjY1 is Y2 + 1,
+        get_piece(Board, X2, AdjY1, Piece1),
+        piece_belongs_to(Opp, Piece1),
+
+        AdjY2 is Y2 - 1,
+        get_piece(Board, X2, AdjY2, Piece2),
+        piece_belongs_to(Opp, Piece2)
+    ).
+
 % =========================
 % MOVE VALIDATION
 % =========================
@@ -65,7 +93,9 @@ valid_move(Board, X1, Y1, X2, Y2, Player) :-
     ),
     ( X1 =:= X2 ; Y1 =:= Y2 ),
     \+ (X1 =:= X2, Y1 =:= Y2),
-    path_clear(Board, X1, Y1, X2, Y2).
+
+    path_clear(Board, X1, Y1, X2, Y2),
+    \+ in_sandwich(Board, X1, X2, Y2, Player).
 
 % =========================
 % RAY-BASED GENERATION
