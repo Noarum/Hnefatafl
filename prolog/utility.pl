@@ -108,11 +108,31 @@ calculate_utility(Board, KR, KC, Score) :-
     king_mobility(Board, KR, KC, Mob),
     material_score(Board, Mat),
     king_escape_routes(Board, KR, KC, Routes),
+    king_capture_pressure(Board, KR, KC, Pressure),
     
     % Heuristic weighting
     CornerScore   is (Max * 2 - Dist) * 50,
     MobilityScore is Mob * 20,
     MaterialScore is Mat * 100,
     RouteScore    is Routes * 2000, % Very high priority for escape paths
+    CaptureScore  is Pressure * 500, % Heavy penalty if king is nearly surrounded
     
-    Score is CornerScore + MobilityScore + MaterialScore + RouteScore.
+    Score is CornerScore + MobilityScore + MaterialScore + RouteScore - CaptureScore.
+
+king_capture_pressure(Board, KR, KC, Pressure) :-
+    % Count how many sides of the king are blocked by attackers, walls, or corners
+    board_size(Board, S),
+    Max is S - 1,
+    findall(1,
+        (
+            member((DR,DC), [(1,0),(-1,0),(0,1),(0,-1)]),
+            NR is KR + DR,
+            NC is KC + DC,
+            (
+                \+ within_bounds(Board, NC, NR) ; % Wall
+                is_corner_cell(NC, NR, Max) ;     % Corner
+                (within_bounds(Board, NC, NR), get_piece(Board, NC, NR, b)) % Attacker
+            )
+        ),
+        L),
+    length(L, Pressure).

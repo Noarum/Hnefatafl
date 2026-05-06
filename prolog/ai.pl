@@ -50,12 +50,28 @@ move_heuristic(Board, w, move(X1,Y1,X2,Y2), Score) :-
     ).
 
 move_heuristic(Board, b, move(_,_,X2,Y2), Score) :-
-    % For attacker: prefer moves toward the center (where king usually is)
-    % Simple heuristic: distance to center
+    % For attacker: prioritize capturing the king, blocking escapes, and surrounding
+    get_king_pos(Board, KR, KC),
+    DistToKing is abs(X2 - KC) + abs(Y2 - KR),
     board_size(Board, S),
-    Center is S // 2,
-    DistFromCenter is abs(X2 - Center) + abs(Y2 - Center),
-    Score is 10 - DistFromCenter.  % Higher score for moves closer to center
+    Max is S - 1,
+    
+    % Bonus for moving adjacent to the king (direct attack)
+    (DistToKing =:= 1 -> AdjacentBonus = 300 ; AdjacentBonus = 0),
+    
+    % Bonus for moving to edge/corner positions (block escapes)
+    (member(X2, [0, Max]) -> BonusX = 50 ; BonusX = 0),
+    (member(Y2, [0, Max]) -> BonusY = 50 ; BonusY = 0),
+    EdgeBonus is BonusX + BonusY,
+    
+    % Heavy penalty for moves far from king (avoid stalling away from action)
+    (DistToKing > 5 -> StallPenalty = -100 ; StallPenalty = 0),
+    
+    % Bonus for moves that create potential sandwich positions
+    % (adjacent cells around king are more valuable)
+    ((DistToKing =:= 2, (X2 =:= KC ; Y2 =:= KR)) -> SandwichSetup = 100 ; SandwichSetup = 0),
+    
+    Score is (25 - DistToKing) + AdjacentBonus + EdgeBonus + StallPenalty + SandwichSetup.
 
 alpha_beta(Board, _, _, _, _, none, Score) :-
     ( check_win(Board, w) ; check_win(Board, b) ),
