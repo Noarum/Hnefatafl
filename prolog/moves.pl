@@ -74,7 +74,8 @@ is_hostile(Board, X, Y, _) :- \+ within_bounds(Board, X, Y), !.
 is_hostile(Board, X, Y, Player) :-
     get_piece(Board, X, Y, Piece),
     (
-        ((Player == attacker ; Player == b), (Piece == w ; Piece == k ; Piece == t ; Piece == c)) ;
+        % Attacker cannot use the king as part of a sandwich capture.
+        ((Player == attacker ; Player == b), (Piece == w ; Piece == t ; Piece == c)) ;
         ((Player == defender ; Player == w), (Piece == b ; Piece == t ; Piece == c))
     ).
 

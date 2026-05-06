@@ -88,9 +88,9 @@ check_one_direction(Board, X, Y, DX, DY, Player, NewBoard) :-
         (
             % Attacker (b) can capture using another 'b' or a restricted square
             (Player == b, (End == b ; is_restricted(X2, Y2, Board))) ;
-            % Defender (w) can capture using another 'w' or a restricted square, 
+            % Defender (w) can capture using another 'w' or a restricted square,
             % but NOT the king (k) as the king is unarmed.
-            (Player == w, (End == w ; is_restricted(X2, Y2, Board)))
+            (Player == w, (End == w ; (is_restricted(X2, Y2, Board), End \== k)))
         )
     ->  set_piece(Board, X1, Y1, e, NewBoard), !
     ;   NewBoard = Board, !
@@ -98,16 +98,22 @@ check_one_direction(Board, X, Y, DX, DY, Player, NewBoard) :-
 check_one_direction(Board, _, _, _, _, _, Board).
 
 apply_captures(Board, X, Y, Player, FinalBoard) :-
-    check_one_direction(Board, X, Y, 1, 0, Player, B1),
-    check_one_direction(B1, X, Y, -1, 0, Player, B2),
-    check_one_direction(B2, X, Y, 0, 1, Player, B3),
-    check_one_direction(B3, X, Y, 0, -1, Player, B4),
-    (
-        (Player == b ; Player == attacker),
-        find_king(B4, KX, KY),
-        king_surrounded(B4, KX, KY)
-    ->  set_piece(B4, KX, KY, e, FinalBoard)
-    ;   FinalBoard = B4
+    get_piece(Board, X, Y, MovedPiece),
+    ( MovedPiece == k, Player == w ->
+        % King is unarmed and does not capture when it moves.
+        FinalBoard = Board
+    ;
+        check_one_direction(Board, X, Y, 1, 0, Player, B1),
+        check_one_direction(B1, X, Y, -1, 0, Player, B2),
+        check_one_direction(B2, X, Y, 0, 1, Player, B3),
+        check_one_direction(B3, X, Y, 0, -1, Player, B4),
+        (
+            (Player == b ; Player == attacker),
+            find_king(B4, KX, KY),
+            king_surrounded(B4, KX, KY)
+        ->  set_piece(B4, KX, KY, e, FinalBoard)
+        ;   FinalBoard = B4
+        )
     ).
 
 check_win(Board, b) :- \+ find_king(Board, _, _).
